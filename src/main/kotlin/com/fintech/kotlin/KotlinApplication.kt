@@ -26,39 +26,44 @@ class KotlinApplication
 private val logger = KotlinLogging.logger {}
 
 suspend fun main(args: Array<String>) {
-    try {
-        val list: List<News> = getNews(3, 2)
-        println(prettyPrint(list))
+    val list: List<News> = getNews(3, 2)
+    if (list.isNotEmpty()) {
         logger.info { "Cписок новостей успешно получен" }
-    } catch (e: Exception) {
-        logger.error { "Не удалось получить новости с сайта" }
+        println(prettyPrint(list))
     }
 
     val period = LocalDate.parse("2024-09-14")..LocalDate.parse("2024-09-15")
     val rateList: List<News> = getNewsListForRange(period).getMostRatedNews(20, period)
 
-    saveCSV("src\\main\\resources\\news.csv", rateList)
-
-    saveHTML("src\\main\\resources\\news.html", rateList)
+    if (rateList.isNotEmpty()) {
+        logger.info { "Cписок новостей успешно получен" }
+        saveCSV("src\\main\\resources\\news.csv", rateList)
+        saveHTML("src\\main\\resources\\news.html", rateList)
+    }
 }
 
 suspend fun getNews(count: Int = 100, page: Int = 1): List<News> {
-    val client = HttpClient() {
-        install(Logging)
-        install(ContentNegotiation) {
-            json(Json {
-                ignoreUnknownKeys = true
-                prettyPrint = true
-                isLenient = true
-            })
+    return try {
+        HttpClient {
+            install(Logging)
+            install(ContentNegotiation) {
+                json(Json {
+                    ignoreUnknownKeys = true
+                    prettyPrint = true
+                    isLenient = true
+                })
+            }
+        }.use {
+            it.get(
+                "https://kudago.com/public-api/v1.2/events/?expand=place&page=$page&" +
+                        "page_size=$count&fields=id,title,publication_date,place,description,site_url,favorites_count," +
+                        "comments_count&location=spb&text_format=text&order_by=-publication_date"
+            ).body<Response>().results
         }
+    } catch (e: Exception) {
+        logger.error { "Не удалось получить новости с сайта" }
+        emptyList()
     }
-
-    return client.get(
-        "https://kudago.com/public-api/v1.2/events/?expand=place&page=$page&" +
-                "page_size=$count&fields=id,title,publication_date,place,description,site_url,favorites_count," +
-                "comments_count&location=spb&text_format=text&order_by=-publication_date"
-    ).body<Response>().results
 }
 
 suspend fun getNewsListForRange(period: ClosedRange<LocalDate>): List<News> {
@@ -66,11 +71,13 @@ suspend fun getNewsListForRange(period: ClosedRange<LocalDate>): List<News> {
     var pageNumber = 1
     var isInRange = true
     while (isInRange) {
-        try {
-            val newsList: List<News> = getNews(page = pageNumber)
+        val newsList: List<News> = getNews(page = pageNumber)
+        if (newsList.isEmpty()) {
+            isInRange = false
+        } else {
             for (news in newsList) {
                 if (period.start.isAfter(news.getLocalDate())) {
-                    logger.debug { "Обработана новость, с датой, выходящей за начало периода - ${news.getLocalDate()}"}
+                    logger.debug { "Обработана новость, с датой, выходящей за начало периода - ${news.getLocalDate()}" }
                     isInRange = false
                     break
                 } else {
@@ -79,10 +86,6 @@ suspend fun getNewsListForRange(period: ClosedRange<LocalDate>): List<News> {
                 }
             }
             pageNumber++
-            logger.info { "Cписок новостей успешно получен" }
-        } catch (e: Exception) {
-            isInRange = false
-            logger.error { "Не удалось получить новости с сайта" }
         }
     }
     return rangeNewsList
@@ -91,7 +94,7 @@ suspend fun getNewsListForRange(period: ClosedRange<LocalDate>): List<News> {
 //фильтр должен полностью быть в методе выше, чтобы не сохранять лишние данные,
 //но оставила здесь, чтобы соответствовало параметрам функции из задания
 fun List<News>.getMostRatedNews(count: Int, period: ClosedRange<LocalDate>): List<News> {
-    return this.filter { it.getLocalDate() in period }.sortedBy{ it.rating }.takeLast(count)
+    return this.filter { it.getLocalDate() in period }.sortedBy { it.rating }.takeLast(count)
 }
 
 fun isValidFile(file: File): Boolean {
@@ -120,8 +123,7 @@ fun saveCSV(path: String, news: Collection<News>) {
                 news.forEach { (id, title, place, description, siteUrl, favoritesCount, commentsCount, publicationDate)
                     ->
                     printRecord(
-                        id, title.replace(" ", " "), place?.id.toString(),
-                        description.replace(" ", " "), siteUrl, favoritesCount, commentsCount,
+                        id, title, place?.id.toString(), description, siteUrl, favoritesCount, commentsCount,
                         publicationDate
                     )
                 }
@@ -138,7 +140,7 @@ fun saveCSV(path: String, news: Collection<News>) {
 fun saveHTML(path: String, news: Collection<News>) {
     val file = File(path)
     if (isValidFile(file)) {
-        val fileWriter = FileOutputStream(file);
+        val fileWriter = FileOutputStream(file)
         try {
             val html = prettyPrintHTML(news).toString()
             val data = html.toByteArray()
