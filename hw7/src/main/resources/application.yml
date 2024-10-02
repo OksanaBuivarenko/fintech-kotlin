@@ -1,0 +1,7 @@
+server:
+  port: 8087
+
+url:
+  base_url: https://kudago.com/public-api
+  locations: /v1.4/locations/
+  categories: /v1.2/place-categories/
