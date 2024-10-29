@@ -6,7 +6,7 @@ import mu.KotlinLogging
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import java.time.LocalDate
 import kotlin.system.measureTimeMillis
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.actor
 
 fun main() = runBlocking {
 
@@ -17,7 +17,7 @@ fun main() = runBlocking {
         app.run(period, 10, 15, "src\\main\\resources\\news.csv");
     }
 
-    val durationTimeFromHw4: Long = measureTimeMillis {
+    val durationTimeFromHw4: Long =  measureTimeMillis {
         val rateList: List<News> = getNewsListForRange(period).getMostRatedNews(20, period)
         if (rateList.isNotEmpty()) {
             saveCSV("src\\main\\resources\\news.csv", rateList)
@@ -34,29 +34,23 @@ class KotlinAppHw9 {
 
     val log = KotlinLogging.logger {}
 
-    val channel = Channel<List<News>>(Channel.UNLIMITED)
-
     suspend fun run(period: ClosedRange<LocalDate>, workersCount: Int, threadsCount: Int, filePath: String) = coroutineScope {
         val workers = List(workersCount) { workerId ->
             launch(newFixedThreadPoolContext(threadsCount, "workersThreadPool")) {
-                worker(workerId, period, workersCount)
+                workerWithActor(workerId, period, workersCount)
             }
         }
 
-        val processorJob = launch { processor(filePath) }
-
         workers.joinAll()
-        channel.close()
-        processorJob.join()
     }
 
-    private suspend fun processor(filePath: String) {
-        for (news in channel) {
-            saveCSV(filePath, news)
+    suspend fun workerWithActor(id: Int, period: ClosedRange<LocalDate>, workersCount: Int) {
+        val actor = GlobalScope.actor<List<News>>() {
+            for (data in channel) {
+                println(data)
+            }
         }
-    }
 
-    suspend fun worker(id: Int, period: ClosedRange<LocalDate>, workersCount: Int) {
         var currentPage = id
 
         var isInRange = true
@@ -79,9 +73,10 @@ class KotlinAppHw9 {
                         }
                     }
                 }
-                channel.send(rangeNewsList)
+                actor.send(rangeNewsList)
                 currentPage += workersCount
             }
         }
+        actor.close()
     }
 }
