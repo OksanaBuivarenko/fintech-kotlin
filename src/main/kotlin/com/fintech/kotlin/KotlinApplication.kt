@@ -25,7 +25,7 @@ class KotlinApplication
 
 private val logger = KotlinLogging.logger {}
 
-suspend fun main(args: Array<String>) {
+suspend fun main() {
     val list: List<News> = getNews(3, 2)
     if (list.isNotEmpty()) {
         logger.info { "Cписок новостей успешно получен" }
@@ -101,9 +101,6 @@ fun isValidFile(file: File): Boolean {
     val parentDir = File(file.absoluteFile.parentFile.absolutePath)
     if (!parentDir.exists() && !parentDir.isDirectory) {
         logger.warn { "Указанный путь к файлу ${file.path} не валиден" }
-        return false
-    } else if (file.exists()) {
-        logger.warn { "Файл ${file.name} уже существует" }
         return false
     } else {
         return true
